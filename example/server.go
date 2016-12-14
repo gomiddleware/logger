@@ -3,7 +3,7 @@ package main
 import (
 	"net/http"
 
-	logger "../"
+	"github.com/gomiddleware/logger"
 )
 
 func handler(w http.ResponseWriter, r *http.Request) {
