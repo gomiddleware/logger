@@ -1,6 +1,7 @@
 package logger
 
 import (
+	"context"
 	"net/http"
 	"os"
 	"time"
@@ -8,6 +9,10 @@ import (
 	"github.com/chilts/sid"
 	"github.com/gomiddleware/logit"
 )
+
+type key int
+
+const logIdKey key = 82
 
 // Logger middleware.
 type Logger struct {
@@ -42,10 +47,10 @@ func (w *wrapper) Write(b []byte) (int, error) {
 }
 
 // New logger middleware.
-func New() func(http.Handler) http.Handler {
+func New(sys string) func(http.Handler) http.Handler {
 	return func(h http.Handler) http.Handler {
 		return &Logger{
-			log: logit.New(os.Stdout, "req"),
+			log: logit.New(os.Stdout, sys),
 			h:   h,
 		}
 	}
@@ -55,7 +60,7 @@ func New() func(http.Handler) http.Handler {
 func NewLogger(log *logit.Logger) func(http.Handler) http.Handler {
 	return func(h http.Handler) http.Handler {
 		return &Logger{
-			log: log.Clone("req"),
+			log: log,
 			h:   h,
 		}
 	}
@@ -66,21 +71,30 @@ func (l *Logger) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 	res := &wrapper{w, 0, 200}
 
+	// clone the logger and put it into the context
+	log := l.log.Clone("req")
+	ctx := context.WithValue(r.Context(), logIdKey, log)
+
 	// ToDo: we could use `r.Header.Get("X-Request-ID")` but we should have a config value to determine whether to use
 	// it or not, since it could come from outside and be untrusted.
 
 	// set up some fields for this request
-	l.log.WithField("method", r.Method)
-	l.log.WithField("uri", r.RequestURI)
-	l.log.WithField("id", sid.Id())
-	l.log.Log("request-start")
+	log.WithField("method", r.Method)
+	log.WithField("uri", r.RequestURI)
+	log.WithField("id", sid.Id())
+	log.Log("request-start")
 
 	// continue to the next middleware
-	l.h.ServeHTTP(res, r)
+	l.h.ServeHTTP(res, r.WithContext(ctx))
 
 	// output the final log line
-	l.log.WithField("status", res.status)
-	l.log.WithField("size", res.written)
-	l.log.WithField("duration", time.Since(start))
-	l.log.Log("request-end")
+	log.WithField("status", res.status)
+	log.WithField("size", res.written)
+	log.WithField("duration", time.Since(start))
+	log.Log("request-end")
+}
+
+// LogFromRequest can be used to obtain the Log from the request.
+func LogFromRequest(r *http.Request) *logit.Logger {
+	return r.Context().Value(logIdKey).(*logit.Logger)
 }
