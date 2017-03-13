@@ -1,21 +1,23 @@
 package logger
 
 import (
-	"log"
 	"net/http"
 	"os"
 	"time"
+
+	"github.com/chilts/sid"
+	"github.com/gomiddleware/logit"
 )
 
 // Logger middleware.
 type Logger struct {
 	h   http.Handler
-	log *log.Logger
+	log *logit.Logger
 }
 
 // SetLogger sets the logger to `log`. If you have used logger.New(), you can use this to set your
 // logger. Alternatively, if you already have your log.Logger, then you can just call logger.NewLogger() directly.
-func (l *Logger) SetLogger(log *log.Logger) {
+func (l *Logger) SetLogger(log *logit.Logger) {
 	l.log = log
 }
 
@@ -43,17 +45,17 @@ func (w *wrapper) Write(b []byte) (int, error) {
 func New() func(http.Handler) http.Handler {
 	return func(h http.Handler) http.Handler {
 		return &Logger{
-			log: log.New(os.Stdout, "", log.Ldate|log.Ltime|log.Lmicroseconds|log.LUTC),
+			log: logit.New(os.Stdout, "req"),
 			h:   h,
 		}
 	}
 }
 
 // NewLogger logger middleware with the given logger.
-func NewLogger(log *log.Logger) func(http.Handler) http.Handler {
+func NewLogger(log *logit.Logger) func(http.Handler) http.Handler {
 	return func(h http.Handler) http.Handler {
 		return &Logger{
-			log: log,
+			log: log.Clone("req"),
 			h:   h,
 		}
 	}
@@ -64,12 +66,21 @@ func (l *Logger) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 	res := &wrapper{w, 0, 200}
 
-	// output the initial log line
-	l.log.Printf("--- %s %s\n", r.Method, r.RequestURI)
+	// ToDo: we could use `r.Header.Get("X-Request-ID")` but we should have a config value to determine whether to use
+	// it or not, since it could come from outside and be untrusted.
+
+	// set up some fields for this request
+	l.log.WithField("method", r.Method)
+	l.log.WithField("uri", r.RequestURI)
+	l.log.WithField("id", sid.Id())
+	l.log.Log("request-start")
 
 	// continue to the next middleware
 	l.h.ServeHTTP(res, r)
 
 	// output the final log line
-	l.log.Printf("%d %s %s %d %s\n", res.status, r.Method, r.RequestURI, res.written, time.Since(start))
+	l.log.WithField("status", res.status)
+	l.log.WithField("size", res.written)
+	l.log.WithField("duration", time.Since(start))
+	l.log.Log("request-end")
 }
