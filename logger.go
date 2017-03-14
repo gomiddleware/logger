@@ -82,7 +82,7 @@ func (l *Logger) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	log.WithField("method", r.Method)
 	log.WithField("uri", r.RequestURI)
 	log.WithField("id", sid.Id())
-	log.Print("request-start")
+	log.Print("req-start")
 
 	// continue to the next middleware
 	l.h.ServeHTTP(res, r.WithContext(ctx))
@@ -91,7 +91,7 @@ func (l *Logger) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	log.WithField("status", res.status)
 	log.WithField("size", res.written)
 	log.WithField("duration", time.Since(start))
-	log.Print("request-end")
+	log.Print("req-end")
 }
 
 // LogFromRequest can be used to obtain the Log from the request.
